@@ -1,8 +1,17 @@
-from src.app.db.database import Base
-from sqlalchemy.orm import Mapped, mapped_column
+import enum
 import uuid
-from sqlalchemy import Uuid, String, DateTime
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
+from sqlalchemy import DateTime, Enum, String, Uuid
+from sqlalchemy.orm import Mapped, mapped_column
+
+from src.app.db.database import Base
+
+
+class UserRole(str, enum.Enum):
+    CUSTOMER = "customer"
+    ORGANIZER = "organizer"
+    ADMIN = "admin"
 
 
 class User(Base):
@@ -31,11 +40,19 @@ class User(Base):
         nullable=False,
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="user_role"),
+        nullable=False,
+        default=UserRole.CUSTOMER,
     )
 
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
