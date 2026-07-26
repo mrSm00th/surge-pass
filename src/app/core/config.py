@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 
 
 class Settings(BaseSettings):
@@ -9,6 +10,10 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_host: str = "localhost"
     postgres_port: int = 5433
+
+    access_token_expire_minutes: int
+    access_token_secret_key: SecretStr
+    access_token_signing_algorithm: str
 
     @property
     def database_url(self) -> str:
