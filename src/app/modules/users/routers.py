@@ -114,6 +114,7 @@ async def read_current_user(current_user: CurrentUser):
 
 @router.post(
     "/refresh",
+    response_model=Token,
 )
 async def refresh_access_token(
     data: RefreshRequest,

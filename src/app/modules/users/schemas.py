@@ -14,7 +14,7 @@ class UserCreate(BaseSchema):
 
 
 class UserCreateResponse(BaseSchema):
-    user_id: uuid.UUID
+    id: uuid.UUID
     name: str
     email: EmailStr
 
@@ -22,3 +22,8 @@ class UserCreateResponse(BaseSchema):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str

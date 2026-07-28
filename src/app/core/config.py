@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     access_token_secret_key: SecretStr
     access_token_signing_algorithm: str
 
+    refresh_token_expire_days: int = 30
+
     @property
     def database_url(self) -> str:
         return (
