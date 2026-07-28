@@ -1,7 +1,9 @@
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 
+from src.app.db.database import AsyncSessionLocal, engine
 from src.app.main import create_app
+from src.app.modules.users.models import RefreshToken, User
 
 pytestmark = pytest.mark.anyio
 
@@ -17,6 +19,18 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_users(client):
+    yield
+    from sqlalchemy import delete
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(RefreshToken))
+        await session.execute(delete(User))
+        await session.commit()
 
 
 async def test_create_user_success(client):

@@ -13,6 +13,8 @@ import uuid
 from sqlalchemy import select
 import secrets
 
+from src.app.modules.users.models import RefreshToken
+
 password_hasher = PasswordHash.recommended()
 
 oauth_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/token")
@@ -113,7 +115,7 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def generate_refresh_token() -> str:
+def generate_token() -> str:
 
     return secrets.token_urlsafe(32)
 
@@ -126,3 +128,26 @@ def hash_refresh_token(refresh_token: str) -> str:
 def verify_refresh_token(plain_token: str, hashed_token: str) -> bool:
 
     return password_hasher.verify(plain_token, hashed_token)
+
+
+async def create_refresh_token(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: uuid.UUID,
+    user_ip: str,
+    user_agent: str,
+):
+
+    new_plain_token = generate_token()
+    hashed_rf_token = hash_refresh_token(new_plain_token)
+
+    new_token = RefreshToken(
+        hashed_token=hashed_rf_token,
+        user_id=user_id,
+        user_ip=user_ip,
+        user_agent=user_agent,
+        expires_at=datetime.now(UTC) + timedelta(settings.refresh_token_expire_days),
+    )
+
+    db.add(new_token)
+
+    return new_plain_token, new_token
