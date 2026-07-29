@@ -3,7 +3,7 @@ from typing import Annotated
 from src.app.db.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.modules.users.models import User
-from sqlalchemy import select
+from sqlalchemy import select, update
 from src.app.core.auth import (
     hash_password,
     verify_password,
@@ -17,6 +17,7 @@ from src.app.modules.users.schemas import (
     UserCreateResponse,
     Token,
     RefreshRequest,
+    LogoutRequest,
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
@@ -27,6 +28,9 @@ from datetime import datetime, UTC
 from src.app.modules.users.models import RefreshToken
 
 import uuid
+
+from src.app.modules.users.utils import fetch_refresh_token
+
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -200,3 +204,68 @@ async def refresh_access_token(
         refresh_token=f"{new_token.id}.{plain_token}",
         token_type="bearer",
     )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def logout_from_current_device(
+    data: LogoutRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+
+    try:
+        token_id, plain_token = data.refresh_token.split(".")
+
+        token_id_uuid = uuid.UUID(token_id)
+
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The refresh token is either missing or malformed",
+        )
+
+    refresh_token_row = await fetch_refresh_token(db, token_id_uuid)
+
+    if (
+        refresh_token_row is None
+        or refresh_token_row.user_id != current_user.id
+        or not verify_refresh_token(plain_token, refresh_token_row.hashed_token)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The refresh token is either missing or malformed",
+        )
+
+    refresh_token_row.revoked_at = datetime.now(UTC)
+
+    await db.commit()
+
+
+@router.post(
+    "/logout/all",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def logout_from_all_devices(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+
+    now = datetime.now(UTC)
+
+    stmt = (
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .values(
+            revoked_at=now,
+        )
+    )
+
+    await db.execute(stmt)
+    await db.commit()
