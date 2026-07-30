@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "aiosmtplib>=5.1.2",
     "alembic>=1.18.5",
     "asyncpg>=0.31.0",
+    "certifi>=2026.7.22",
     "email-validator>=2.3.0",
     "fastapi>=0.139.2",
     "pwdlib[argon2]>=0.3.0",
