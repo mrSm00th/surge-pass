@@ -15,6 +15,11 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
 
 
+class OTPPurpose(str, enum.Enum):
+    EMAIL_VERIFICATION = "EMAIL_VERIFICATION"
+    PASSWORD_RESET = "PASSWORD_RESET"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -47,6 +52,12 @@ class User(Base):
         default=UserRole.CUSTOMER,
     )
 
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -61,6 +72,11 @@ class User(Base):
     )
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    verification_otp: Mapped[list["OTPVerification"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -141,6 +157,11 @@ class OTPVerification(Base):
         index=True,
     )
 
+    purpose: Mapped[OTPPurpose] = mapped_column(
+        Enum(OTPPurpose),
+        nullable=False,
+    )
+
     otp_hashed: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -169,6 +190,7 @@ class OTPVerification(Base):
         Index(
             "idx_one_valid_otp_per_user",
             "user_id",
+            "purpose",
             unique=True,
             postgresql_where=text("is_used=false"),
         ),

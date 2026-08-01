@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     mail_from: str
     mail_use_tls: bool = True
 
+    otp_expire_minutes: int
+
+    frontend_url: str = "http://localhost:3000"
+
     @property
     def database_url(self) -> str:
         return (

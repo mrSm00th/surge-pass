@@ -18,6 +18,11 @@ from src.app.modules.users.schemas import (
     Token,
     RefreshRequest,
     LogoutRequest,
+    MessageResponse,
+    SendOTPRequest,
+    VerifyEmailRequest,
+    PasswordResetRequest,
+    PasswordResetConfirm,
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
@@ -25,12 +30,20 @@ from src.app.core.config import settings
 
 from datetime import datetime, UTC
 
-from src.app.modules.users.models import RefreshToken
+from src.app.modules.users.models import RefreshToken, OTPVerification, OTPPurpose
 
 import uuid
 
-from src.app.modules.users.utils import fetch_refresh_token
+from src.app.modules.users.utils import (
+    fetch_refresh_token,
+    generate_random_otp,
+    remove_all_valid_otp_for_user,
+    get_latest_valid_otp,
+)
 
+from src.app.core.email import send_otp_email, send_password_reset_email
+
+import secrets
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -269,3 +282,187 @@ async def logout_from_all_devices(
 
     await db.execute(stmt)
     await db.commit()
+
+
+@router.post(
+    "/verify-email/send",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="generates a random  digit otp and sends it to the registered email",
+)
+async def get_verification_email(
+    data: SendOTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+
+    result = await db.execute(select(User).where(User.email == data.email))
+
+    user = result.scalars().first()
+
+    if not user or user.is_verified:
+        return MessageResponse(
+            message="If the email is registered and not verified, an OTP will be sent to the email"
+        )
+
+    await remove_all_valid_otp_for_user(db, user.email, OTPPurpose.EMAIL_VERIFICATION)
+
+    otp = generate_random_otp(length=6)
+
+    new_otp = OTPVerification(
+        user_id=user.id,
+        email=user.email,
+        otp_hashed=hash_password(otp),
+        purpose=OTPPurpose.EMAIL_VERIFICATION,
+        expires_at=datetime.now(UTC) + timedelta(minutes=settings.otp_expire_minutes),
+    )
+
+    db.add(new_otp)
+    await db.commit()
+
+    await send_otp_email(
+        otp,
+        user.email,
+    )
+
+    return MessageResponse(
+        message="If the email is registered and not verified, an OTP will be sent to the email"
+    )
+
+
+@router.post(
+    "/verify-email/confirm",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Confirm email verification OTP",
+)
+async def confirm_verification_otp(
+    data: VerifyEmailRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    if user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email is already verified.",
+        )
+
+    otp_record = await get_latest_valid_otp(
+        db, user.email, OTPPurpose.EMAIL_VERIFICATION
+    )
+
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP is invalid or has expired. Please request a new one.",
+        )
+
+    if not verify_password(data.otp, otp_record.otp_hashed):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect OTP.",
+        )
+
+    otp_record.is_used = True
+    user.is_verified = True
+    await db.commit()
+
+    return MessageResponse(message="Email verified successfully.")
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Request password reset link",
+)
+async def request_password_reset(
+    data: PasswordResetRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalars().first()
+
+    if not user:
+        return MessageResponse(
+            message="If this email is registered, a password reset link has been sent."
+        )
+
+    await remove_all_valid_otp_for_user(db, user.email, OTPPurpose.PASSWORD_RESET)
+
+    reset_token = secrets.token_urlsafe(32)
+
+    db.add(
+        OTPVerification(
+            user_id=user.id,
+            email=user.email,
+            otp_hashed=hash_password(reset_token),
+            purpose=OTPPurpose.PASSWORD_RESET,
+            expires_at=datetime.now(UTC)
+            + timedelta(minutes=settings.otp_expire_minutes),
+        )
+    )
+    await db.commit()
+
+    try:
+        await send_password_reset_email(
+            to_email=user.email,
+            name=user.name,
+            reset_token=reset_token,
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send password reset email",
+        )
+
+    return MessageResponse(
+        message="If this email is registered, a password reset link has been sent."
+    )
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Confirm reset token and set new password",
+)
+async def confirm_password_reset(
+    data: PasswordResetConfirm,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    otp_record = await get_latest_valid_otp(db, user.email, OTPPurpose.PASSWORD_RESET)
+
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired. Please request a new one.",
+        )
+
+    if not verify_password(data.token, otp_record.otp_hashed):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired. Please request a new one.",
+        )
+
+    otp_record.is_used = True
+    user.password_hashed = hash_password(data.new_password)
+    await db.commit()
+
+    return MessageResponse(message="Password reset successfully. You can now log in.")

@@ -31,3 +31,26 @@ class RefreshRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class SendOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseSchema):
+    email: EmailStr
+    otp: Annotated[str, Field(min_length=6, max_length=6)]
+
+
+class PasswordResetRequest(BaseSchema):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseSchema):
+    email: EmailStr
+    token: str
+    new_password: Annotated[str, Field(min_length=8, max_length=128)]
