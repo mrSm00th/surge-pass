@@ -30,20 +30,27 @@ from src.app.core.config import settings
 
 from datetime import datetime, UTC
 
-from src.app.modules.users.models import RefreshToken, OTPVerification, OTPPurpose
+from src.app.modules.users.models import RefreshToken, OTPPurpose
 
 import uuid
 
 from src.app.modules.users.utils import (
     fetch_refresh_token,
     generate_random_otp,
-    remove_all_valid_otp_for_user,
-    get_latest_valid_otp,
+    get_valid_otp,
+    record_failed_otp_attempt,
+    upsert_otp,
+    get_user_by_email,
 )
 
-from src.app.core.email import send_otp_email, send_password_reset_email
 
 import secrets
+
+
+from src.app.modules.users.tasks import (
+    send_otp_email_task,
+    send_password_reset_email_task,
+)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -54,9 +61,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 )
 async def create_user(data: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
 
-    result = await db.execute(select(User).where(User.email == data.email))
-
-    existing_user = result.scalars().first()
+    existing_user = await get_user_by_email(data.email, db)
 
     if existing_user:
         raise HTTPException(
@@ -65,8 +70,8 @@ async def create_user(data: UserCreate, db: Annotated[AsyncSession, Depends(get_
         )
 
     new_user = User(
-        name=data.name,
-        email=data.email,
+        name=data.name.strip(),
+        email=data.email.strip().lower(),
         password_hashed=hash_password(data.password),
     )
 
@@ -111,11 +116,8 @@ async def login_for_access_token(
     plain_token, new_token = await create_refresh_token(
         db, user.id, user_ip, user_agent
     )
-    # new_token = new_token_dict["new_token_row"]
-    # plain_token= new_token_dict["plain_token"]
 
     await db.commit()
-    # await db.refresh(new_token)
 
     return Token(
         access_token=access_token,
@@ -295,31 +297,32 @@ async def get_verification_email(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
 
-    result = await db.execute(select(User).where(User.email == data.email))
-
-    user = result.scalars().first()
+    user = await get_user_by_email(data.email, db)
 
     if not user or user.is_verified:
         return MessageResponse(
             message="If the email is registered and not verified, an OTP will be sent to the email"
         )
 
-    await remove_all_valid_otp_for_user(db, user.email, OTPPurpose.EMAIL_VERIFICATION)
-
     otp = generate_random_otp(length=6)
 
-    new_otp = OTPVerification(
-        user_id=user.id,
-        email=user.email,
-        otp_hashed=hash_password(otp),
-        purpose=OTPPurpose.EMAIL_VERIFICATION,
-        expires_at=datetime.now(UTC) + timedelta(minutes=settings.otp_expire_minutes),
+    hashed_value = hash_password(otp)
+
+    expires_at = datetime.now(UTC) + timedelta(minutes=settings.otp_expire_minutes)
+
+    stmt = await upsert_otp(
+        db,
+        user.id,
+        user.email,
+        OTPPurpose.EMAIL_VERIFICATION,
+        hashed_value,
+        expires_at,
     )
 
-    db.add(new_otp)
+    await db.execute(stmt)
     await db.commit()
 
-    await send_otp_email(
+    send_otp_email_task.delay(
         otp,
         user.email,
     )
@@ -339,13 +342,12 @@ async def confirm_verification_otp(
     data: VerifyEmailRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalars().first()
+    user = await get_user_by_email(data.email, db)
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired. Please request a new one.",
         )
 
     if user.is_verified:
@@ -354,9 +356,7 @@ async def confirm_verification_otp(
             detail="Email is already verified.",
         )
 
-    otp_record = await get_latest_valid_otp(
-        db, user.email, OTPPurpose.EMAIL_VERIFICATION
-    )
+    otp_record = await get_valid_otp(db, user.id, OTPPurpose.EMAIL_VERIFICATION)
 
     if not otp_record:
         raise HTTPException(
@@ -365,6 +365,14 @@ async def confirm_verification_otp(
         )
 
     if not verify_password(data.otp, otp_record.otp_hashed):
+        invalidated = await record_failed_otp_attempt(db, otp_record)
+
+        if invalidated:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TOO many failed attempts,please generate a new otp",
+            )
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect OTP.",
@@ -387,41 +395,38 @@ async def request_password_reset(
     data: PasswordResetRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalars().first()
+    user = await get_user_by_email(data.email, db)
 
     if not user:
         return MessageResponse(
             message="If this email is registered, a password reset link has been sent."
         )
 
-    await remove_all_valid_otp_for_user(db, user.email, OTPPurpose.PASSWORD_RESET)
+    # await remove_all_valid_otp_for_user(db, user.email, OTPPurpose.PASSWORD_RESET)
 
     reset_token = secrets.token_urlsafe(32)
 
-    db.add(
-        OTPVerification(
-            user_id=user.id,
-            email=user.email,
-            otp_hashed=hash_password(reset_token),
-            purpose=OTPPurpose.PASSWORD_RESET,
-            expires_at=datetime.now(UTC)
-            + timedelta(minutes=settings.otp_expire_minutes),
-        )
+    hashed_value = hash_password(reset_token)
+
+    expires_at = datetime.now(UTC) + timedelta(minutes=settings.otp_expire_minutes)
+
+    stmt = await upsert_otp(
+        db,
+        user.id,
+        user.email,
+        OTPPurpose.PASSWORD_RESET,
+        hashed_value,
+        expires_at,
     )
+
+    await db.execute(stmt)
     await db.commit()
 
-    try:
-        await send_password_reset_email(
-            to_email=user.email,
-            name=user.name,
-            reset_token=reset_token,
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send password reset email",
-        )
+    send_password_reset_email_task.delay(
+        to_email=user.email,
+        name=user.name,
+        reset_token=reset_token,
+    )
 
     return MessageResponse(
         message="If this email is registered, a password reset link has been sent."
@@ -438,16 +443,15 @@ async def confirm_password_reset(
     data: PasswordResetConfirm,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalars().first()
+    user = await get_user_by_email(data.email, db)
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired. Please request a new one.",
         )
 
-    otp_record = await get_latest_valid_otp(db, user.email, OTPPurpose.PASSWORD_RESET)
+    otp_record = await get_valid_otp(db, user.id, OTPPurpose.PASSWORD_RESET)
 
     if not otp_record:
         raise HTTPException(
@@ -456,11 +460,34 @@ async def confirm_password_reset(
         )
 
     if not verify_password(data.token, otp_record.otp_hashed):
+        invalidated = await record_failed_otp_attempt(db, otp_record)
+
+        if invalidated:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TOO many failed attempts,please generate a new reset link",
+            )
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset link is invalid or has expired. Please request a new one.",
+            detail="Password reset is invalid or has expired. Please request a new one.",
         )
 
+    now = datetime.now(UTC)
+
+    stmt = (
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .values(
+            revoked_at=now,
+        )
+    )
+
+    await db.execute(stmt)
     otp_record.is_used = True
     user.password_hashed = hash_password(data.new_password)
     await db.commit()

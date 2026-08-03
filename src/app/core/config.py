@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
 
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
+
     @property
     def database_url(self) -> str:
         return (

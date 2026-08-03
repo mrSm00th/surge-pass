@@ -2,7 +2,17 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Enum, String, Uuid, ForeignKey, Boolean, Index, text
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    String,
+    Uuid,
+    ForeignKey,
+    Boolean,
+    Index,
+    text,
+    Integer,
+)
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -177,6 +187,13 @@ class OTPVerification(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
+    )
+
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
 
     expires_at: Mapped[datetime] = mapped_column(

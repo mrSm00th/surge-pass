@@ -17,8 +17,8 @@ celery_app.conf.update(
 )
 
 
-celery_app.auto_discover_tasks(
+celery_app.autodiscover_tasks(
     [
-        "src.app.modules.users.tasks",
+        "src.app.modules.users",
     ]
 )
