@@ -9,6 +9,42 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: surgepass_test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5433
+
+      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      ACCESS_TOKEN_SECRET_KEY: test-secret-key
+      ACCESS_TOKEN_SIGNING_ALGORITHM: HS256
+
+      SMTP_HOST: localhost
+      SMTP_USER: test
+      SMTP_PASSWORD: test
+      MAIL_FROM_NAME: Test
+      MAIL_FROM: test@example.com
+      OTP_EXPIRE_MINUTES: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: surgepass_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +57,11 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
       - name: Lint
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run python -m pytest

@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,27 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_host: str = "localhost"
     postgres_port: int = 5433
+
+    access_token_expire_minutes: int
+    access_token_secret_key: SecretStr
+    access_token_signing_algorithm: str
+
+    refresh_token_expire_days: int = 30
+
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_user: str
+    smtp_password: str
+    mail_from_name: str
+    mail_from: str
+    mail_use_tls: bool = True
+
+    otp_expire_minutes: int
+
+    frontend_url: str = "http://localhost:3000"
+
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
 
     @property
     def database_url(self) -> str:
