@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from src.app.modules.users import routers as users
 
 

@@ -1,19 +1,16 @@
-from fastapi import Depends
-from typing import Annotated
-from src.app.db.database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
-
-from src.app.modules.users.models import RefreshToken, OTPVerification, OTPPurpose, User
-
-import uuid
 import random
 import string
+import uuid
+from datetime import UTC, datetime
+from typing import Annotated
 
-from datetime import datetime, UTC
-
+from fastapi import Depends
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.db.database import get_db
+from src.app.modules.users.models import OTPPurpose, OTPVerification, RefreshToken, User
 
 MAX_OTP_ATTEMPTS = 5
 

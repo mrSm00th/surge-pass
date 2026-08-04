@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field, EmailStr
-from typing import Annotated
 import uuid
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class BaseSchema(BaseModel):

@@ -1,55 +1,47 @@
-from fastapi import APIRouter, status, HTTPException, Depends, Request
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from src.app.db.database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.app.modules.users.models import User
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.app.core.auth import (
+    CurrentUser,
+    create_access_token,
+    create_refresh_token,
     hash_password,
     verify_password,
-    create_access_token,
-    CurrentUser,
-    create_refresh_token,
     verify_refresh_token,
 )
+from src.app.core.config import settings
+from src.app.db.database import get_db
+from src.app.modules.users.models import OTPPurpose, RefreshToken, User
 from src.app.modules.users.schemas import (
-    UserCreate,
-    UserCreateResponse,
-    Token,
-    RefreshRequest,
     LogoutRequest,
     MessageResponse,
-    SendOTPRequest,
-    VerifyEmailRequest,
-    PasswordResetRequest,
     PasswordResetConfirm,
+    PasswordResetRequest,
+    RefreshRequest,
+    SendOTPRequest,
+    Token,
+    UserCreate,
+    UserCreateResponse,
+    VerifyEmailRequest,
 )
-from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
-from src.app.core.config import settings
-
-from datetime import datetime, UTC
-
-from src.app.modules.users.models import RefreshToken, OTPPurpose
-
-import uuid
-
-from src.app.modules.users.utils import (
-    fetch_refresh_token,
-    generate_random_otp,
-    get_valid_otp,
-    record_failed_otp_attempt,
-    upsert_otp,
-    get_user_by_email,
-)
-
-
-import secrets
-
-
 from src.app.modules.users.tasks import (
     send_otp_email_task,
     send_password_reset_email_task,
+)
+from src.app.modules.users.utils import (
+    fetch_refresh_token,
+    generate_random_otp,
+    get_user_by_email,
+    get_valid_otp,
+    record_failed_otp_attempt,
+    upsert_otp,
 )
 
 router = APIRouter(prefix="/api/users", tags=["users"])

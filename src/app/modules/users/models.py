@@ -3,15 +3,15 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Enum,
+    ForeignKey,
+    Index,
+    Integer,
     String,
     Uuid,
-    ForeignKey,
-    Boolean,
-    Index,
     text,
-    Integer,
 )
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship

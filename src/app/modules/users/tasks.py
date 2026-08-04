@@ -1,7 +1,8 @@
-from src.app.core.celery_app import celery_app
 import asyncio
-from src.app.core.email import send_email
+
+from src.app.core.celery_app import celery_app
 from src.app.core.config import settings
+from src.app.core.email import send_email
 from src.app.core.email_render import render_email_template
 
 

@@ -1,10 +1,12 @@
-import aiosmtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
-from src.app.core.config import settings
-import ssl
+
+import aiosmtplib
 import certifi
+
+from src.app.core.config import settings
 
 
 async def send_email(

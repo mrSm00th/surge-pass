@@ -1,6 +1,6 @@
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
 
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
 

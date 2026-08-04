@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 from httpx2 import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
 from src.app.db.database import AsyncSessionLocal, engine
 from src.app.main import create_app
-from src.app.modules.users.models import RefreshToken, User, OTPVerification
+from src.app.modules.users.models import OTPVerification, RefreshToken, User
 
 pytestmark = pytest.mark.anyio
 
