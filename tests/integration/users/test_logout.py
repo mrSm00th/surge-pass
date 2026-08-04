@@ -50,11 +50,6 @@ async def register_and_login(
     return data["access_token"], data["refresh_token"]
 
 
-# ---------------------------------------------------------------------------
-# /api/users/logout
-# ---------------------------------------------------------------------------
-
-
 async def test_logout_success(client):
     access_token, refresh_token = await register_and_login(
         client, "logout1@example.com"
@@ -203,11 +198,6 @@ async def test_logout_does_not_affect_other_sessions(client):
         json={"refresh_token": refresh_token_2},
     )
     assert refresh_response.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# /api/users/logout/all
-# ---------------------------------------------------------------------------
 
 
 async def test_logout_all_success(client):

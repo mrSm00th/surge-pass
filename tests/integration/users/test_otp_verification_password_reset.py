@@ -82,11 +82,6 @@ def get_sent_reset_token(mock_task):
     return kwargs["reset_token"]
 
 
-# ---------------------------------------------------------------------------
-# Email verification: /verify-email/send
-# ---------------------------------------------------------------------------
-
-
 async def test_send_verification_otp_triggers_email_task(client, mock_otp_email_task):
     email = "verify1@example.com"
     await register_user(client, email=email)
@@ -128,11 +123,6 @@ async def test_send_verification_otp_already_verified_user_no_task_triggered(
 
     assert response.status_code == 200
     mock_otp_email_task.delay.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Email verification: /verify-email/confirm
-# ---------------------------------------------------------------------------
 
 
 async def test_confirm_verification_correct_otp_marks_user_verified(
@@ -235,11 +225,6 @@ async def test_requesting_new_otp_invalidates_previous_otp(client, mock_otp_emai
     assert fresh_attempt.status_code == 200
 
 
-# ---------------------------------------------------------------------------
-# Password reset: /password-reset/request
-# ---------------------------------------------------------------------------
-
-
 async def test_password_reset_request_triggers_email_task(
     client, mock_password_reset_email_task
 ):
@@ -265,11 +250,6 @@ async def test_password_reset_request_nonexistent_email_no_task_triggered(
 
     assert response.status_code == 200
     mock_password_reset_email_task.delay.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Password reset: /password-reset/confirm
-# ---------------------------------------------------------------------------
 
 
 async def test_password_reset_confirm_correct_token_changes_password(
