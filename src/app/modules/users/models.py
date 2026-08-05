@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import enum
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -17,6 +20,9 @@ from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.app.db.database import Base
+
+if TYPE_CHECKING:
+    from src.app.modules.organizers.models import OrganizerProfile
 
 
 class UserRole(str, enum.Enum):
@@ -81,12 +87,17 @@ class User(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    verification_otp: Mapped[list["OTPVerification"]] = relationship(
+    verification_otp: Mapped[list[OTPVerification]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    organizer_profile: Mapped[OrganizerProfile | None] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -141,7 +152,7 @@ class RefreshToken(Base):
         nullable=False,
     )
 
-    user: Mapped["User"] = relationship(
+    user: Mapped[User] = relationship(
         back_populates="refresh_tokens",
     )
 
@@ -201,7 +212,9 @@ class OTPVerification(Base):
         nullable=False,
     )
 
-    user: Mapped[User] = relationship(back_populates="verification_otp")
+    user: Mapped[User] = relationship(
+        back_populates="verification_otp",
+    )
 
     __table_args__ = (
         Index(
