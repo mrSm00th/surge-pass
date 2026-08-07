@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.app.db.database import Base
 
 if TYPE_CHECKING:
+    from src.app.modules.events.models import Event
     from src.app.modules.users.models import User
 
 
@@ -89,6 +90,10 @@ class OrganizerProfile(Base):
 
     user: Mapped[User] = relationship(
         back_populates="organizer_profile",
+    )
+
+    events: Mapped[list["Event"]] = relationship(
+        back_populates="organizer",
     )
 
     __table_args__ = (

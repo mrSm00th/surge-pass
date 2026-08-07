@@ -21,7 +21,7 @@ from src.app.db.database import Base
 
 if TYPE_CHECKING:
     from src.app.modules.organizers.models import OrganizerProfile
-    # from src.app.modules.tickets.models import Section  # add once Section exists
+    from src.app.modules.tickets.models import TicketTier
 
 
 class EventStatus(str, enum.Enum):
@@ -122,11 +122,10 @@ class Event(Base):
         back_populates="events",
     )
 
-    # sections: Mapped[list[Section]] = relationship(
-    #     back_populates="event",
-    #     cascade="all, delete-orphan",
-    # )
-
+    ticket_tiers: Mapped[list["TicketTier"]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
+    )
     __table_args__ = (
         CheckConstraint(
             "event_end_time > event_start_time",
