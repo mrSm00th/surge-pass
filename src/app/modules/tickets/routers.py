@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.core.dependencies import require_roles
 from src.app.db.database import get_db
 from src.app.modules.events.models import EventStatus
+from src.app.modules.events.utils import fetch_event_by_id
 from src.app.modules.organizers.utils import get_organizer_profile_by_user_id
 from src.app.modules.tickets.models import TicketTier
 from src.app.modules.tickets.schemas import CreateTicketTier, TicketTierOut
-from src.app.modules.tickets.utils import fetch_event_by_id
 from src.app.modules.users.models import User, UserRole
 
 router = APIRouter(prefix="/events", tags=["Tickets"])

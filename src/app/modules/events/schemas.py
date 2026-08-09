@@ -1,7 +1,10 @@
+import uuid
 from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, Field, configDict, model_validator
+
+from src.app.modules.events.models import EventStatus
 
 
 class BaseSchema(BaseModel):
@@ -38,3 +41,34 @@ class EventCreate(BaseSchema):
             raise ValueError("ticket sales must end before the event starts")
 
         return self
+
+
+class EventOut(BaseSchema):
+    id: uuid.UUID
+    organizer_id: uuid.UUID
+    title: str
+    description: str | None
+    venue_name: str
+    venue_address: str
+    city: str
+    status: EventStatus
+    event_start_time: datetime
+    event_end_time: datetime
+    sale_start_at: datetime
+    sale_end_at: datetime
+    max_tickets_per_user: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class EventUpdate(BaseSchema):
+    title: str | None = None
+    description: str | None = None
+    venue_name: str | None = None
+    venue_address: str | None = None
+    city: str | None = None
+    event_start_time: datetime | None = None
+    event_end_time: datetime | None = None
+    sale_start_at: datetime | None = None
+    sale_end_at: datetime | None = None
+    max_tickets_per_user: int | None = None
