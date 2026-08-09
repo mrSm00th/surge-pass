@@ -32,3 +32,22 @@ async def get_or_create_organizer_profile(
 
     await db.flush()
     return organizer
+
+
+async def get_organizer_profile_by_user_id(
+    db: AsyncSession,
+    user_id: str,
+):
+
+    result = await db.execute(
+        select(OrganizerProfile).where(OrganizerProfile.user_id == user_id)
+    )
+
+    organizer_profile = result.scalars().first()
+
+    if not organizer_profile:
+        raise ValueError(
+            f"Organizer profile not found for user {user_id} with role ORGANIZER"
+        )
+
+    return organizer_profile
