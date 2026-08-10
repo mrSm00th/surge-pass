@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Uuid,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.app.db.database import Base
@@ -30,6 +31,15 @@ class KYCStatus(str, enum.Enum):
     REJECTED = "REJECTED"
 
 
+class KYCProviderStatus(str, enum.Enum):
+    CREATED = "created"
+    UNDER_REVIEW = "under_review"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    ACTIVATED = "activated"
+    SUSPENDED = "suspended"
+    REJECTED = "rejected"
+
+
 class OrganizerProfile(Base):
     __tablename__ = "organizer_profiles"
 
@@ -40,9 +50,8 @@ class OrganizerProfile(Base):
             "users.id",
             ondelete="CASCADE",
         ),
-        unique=True,
+        unique=True,  # auto indexed due to unique
         nullable=False,
-        # index=True, unique=True auto indexes this
     )
 
     kyc_status: Mapped[KYCStatus] = mapped_column(
@@ -50,8 +59,34 @@ class OrganizerProfile(Base):
         default=KYCStatus.PENDING,
     )
 
-    payout_account_id: Mapped[str] = mapped_column(
+    kyc_provider_status: Mapped[KYCProviderStatus | None] = mapped_column(
+        Enum(
+            KYCProviderStatus,
+            name="kyc_provider_status",
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [member.value for member in e],
+        ),
+        nullable=True,
+    )
+
+    kyc_requirements: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    razorpay_account_id: Mapped[str] = mapped_column(
         String(255),
+        nullable=True,
+    )
+
+    kyc_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    kyc_activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
 
@@ -99,7 +134,7 @@ class OrganizerProfile(Base):
     __table_args__ = (
         CheckConstraint(
             "kyc_status != 'VERIFIED' OR "
-            "(payout_account_id IS NOT NULL AND business_name IS NOT NULL)",
+            "(razorpay_account_id IS NOT NULL AND business_name IS NOT NULL)",
             name="ck_verified_organizer_has_payout_details",
         ),
     )
