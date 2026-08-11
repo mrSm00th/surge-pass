@@ -42,3 +42,7 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+snipits
+
+src/app/modules/organizers/routers.py
