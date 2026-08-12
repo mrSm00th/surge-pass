@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pydantic_extra_types.phone_numbers import PhoneNumber
 
 
@@ -30,7 +30,7 @@ class StakeholderBase(BaseModel):
     address: StakeholderAddress
 
 
-class RazorpayLinkedAccountCreaterequest(BaseSchema):
+class OrganizerKYCSubmitRequest(BaseSchema):
     legal_business_name: Annotated[str, Field(max_length=200)]
     business_type: str
     pan_number: Annotated[str, Field(min_length=10, max_length=10)]
@@ -48,3 +48,27 @@ class RazorpayLinkedAccountCreaterequest(BaseSchema):
         ...,
         description="Organizer's explicit acceptance of Razorpay Route's terms and conditions.",
     )
+
+    @field_validator("pan_number")
+    @classmethod
+    def _normalize_pan(cls, v: str) -> str:
+
+        return v.strip().upper()
+
+    @field_validator("bank_ifsc")
+    @classmethod
+    def _normalize_ifsc(cls, v: str) -> str:
+
+        return v.strip().upper()
+
+    @field_validator("gst_number")
+    @classmethod
+    def _normalize_gst(cls, v: str | None) -> str | None:
+        return v.strip().upper() if v else vars
+
+    @field_validator("tnc_accepted")
+    @classmethod
+    def _must_accept_tnc(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError("Terms and conditions must be accepted to submit KYC.")
+        return v
