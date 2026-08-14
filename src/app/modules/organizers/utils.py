@@ -1,15 +1,23 @@
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 
+import requests
 from fastapi import Depends, HTTPException, status
+from razorpay.errors import BadRequestError, GatewayError, ServerError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.dependencies import require_roles
 from src.app.core.razorpay_client import razorpay_client
 from src.app.db.database import get_db
+from src.app.modules.organizers.exceptions import (
+    RazorpayIntegrationError,
+    RazorpayUpstreamError,
+    RazorpayValidationError,
+)
 from src.app.modules.organizers.models import (
     KYCProviderStatus,
     KYCStatus,
@@ -19,16 +27,10 @@ from src.app.modules.organizers.models import (
 from src.app.modules.organizers.schemas import OrganizerKYCSubmitRequest
 from src.app.modules.users.models import User, UserRole
 
+logger = logging.getLogger(__name__)
+
+
 REFERENCE_CODE_LENGTH = 20
-
-
-class RazorpayIntegrationError(Exception):
-    def __init__(self, step: str, original_exc: Exception):
-
-        self.step = step
-        self.original_exc = original_exc
-
-        super().__init__(f"Razorpay call failed during '{step}': {original_exc}")
 
 
 # a mapping of KYCProviderStatus to the in app KYCStatus
@@ -43,6 +45,31 @@ _PROVIDER_TO_BUSINESS_STATUS: dict[KYCProviderStatus, KYCStatus] = {
 
 def map_provider_status_to_kyc_status(provider_status: KYCProviderStatus) -> KYCStatus:
     return _PROVIDER_TO_BUSINESS_STATUS[provider_status]
+
+
+# wrapper function to wrap every rz pay call and act as a centralized exception translator
+async def _call_razorpay(
+    step: str,
+    fn: Callable[..., dict[str, Any]],
+    *args: Any,
+) -> dict[str, Any]:
+
+    try:
+        return await asyncio.to_thread(fn, *args)
+
+    except BadRequestError as exc:
+        raise RazorpayValidationError(step, exc) from exc
+
+    except (GatewayError, ServerError) as exc:
+        raise RazorpayUpstreamError(step, exc) from exc
+
+    # catching timeout, DNS or connection reset errors
+    except requests.exceptions.RequestException as exc:
+        raise RazorpayUpstreamError(step, exc) from exc
+
+    except Exception as exc:
+        logger.exception("Unclassified error calling Razorpay during '%s'", step)
+        raise RazorpayIntegrationError(step, exc) from exc
 
 
 async def get_or_create_organizer_profile(
@@ -127,8 +154,8 @@ async def _create_razorpay_account(
 ):
 
     try:
-        new_razorpay_account = await asyncio.to_thread(
-            razorpay_client.account.create,
+        new_razorpay_account = await _call_razorpay(
+            "account.create",
             {
                 "email": payload.contact_email,
                 "phone": payload.contact_phone,
@@ -163,7 +190,8 @@ async def _create_razorpay_account(
 
 
 async def _create_razorpay_stakeholder(
-    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
+    organizer: OrganizerProfile,
+    payload: OrganizerKYCSubmitRequest,
 ) -> dict[str, Any]:
 
     if organizer.razorpay_account_id is None:
@@ -173,8 +201,8 @@ async def _create_razorpay_stakeholder(
         )
 
     try:
-        new_stakeholder = await asyncio.to_thread(
-            razorpay_client.stakeholder.create,
+        new_stakeholder = await _call_razorpay(
+            "stakeholder.create",
             organizer.razorpay_account_id,
             {
                 "name": payload.stakeholder.name,
@@ -201,7 +229,8 @@ async def _create_razorpay_stakeholder(
 
 
 async def _edit_razorpay_stakeholder(
-    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
+    organizer: OrganizerProfile,
+    payload: OrganizerKYCSubmitRequest,
 ) -> dict[str, Any]:
 
     if organizer.razorpay_account_id is None:
@@ -217,7 +246,8 @@ async def _edit_razorpay_stakeholder(
         )
 
     try:
-        return await asyncio.to_thread(
+        return await _call_razorpay(
+            "stakeholder.edit",
             razorpay_client.stakeholder.edit,
             organizer.razorpay_account_id,
             organizer.razorpay_stakeholder_id,
@@ -253,7 +283,8 @@ async def _request_razorpay_product_config(
         )
 
     try:
-        return await asyncio.to_thread(
+        return await _call_razorpay(
+            "product.requestProductConfiguration",
             razorpay_client.product.requestProductConfiguration,
             organizer.razorpay_account_id,
             {
@@ -291,7 +322,8 @@ async def _edit_razorpay_product_config(
         )
 
     try:
-        return await asyncio.to_thread(
+        return await _call_razorpay(
+            "product.edit",
             razorpay_client.product.edit,
             organizer.razorpay_account_id,
             organizer.razorpay_product_id,
