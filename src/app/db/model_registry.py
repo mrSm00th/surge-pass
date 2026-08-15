@@ -6,3 +6,4 @@ from src.app.modules.users.models import (  # noqa: F401
     RefreshToken,
     User,
 )
+from src.app.modules.webhooks.models import RazorpayWebhookEvent  # noqa: F401

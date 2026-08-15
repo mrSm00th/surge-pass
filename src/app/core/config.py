@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     razorpay_key_id: str
     razorpay_key_secret: str
 
+    razorpay_webhook_secret: str
+
     fernet_key: str
 
     @property
