@@ -1,4 +1,5 @@
-# from __future__ import annotations
+from __future__ import annotations
+
 from typing import Any
 
 
@@ -31,10 +32,12 @@ class RazorpayUpstreamError(RazorpayIntegrationError):
     """
 
     # helper function thats helps us log the exception better
-    def describe(exc: RazorpayIntegrationError) -> dict[str, Any]:
 
-        return {
-            "step": exc.step,
-            "error_type": type(exc).__name__,
-            "original": str(exc.original),
-        }
+
+def describe(exc: RazorpayIntegrationError) -> dict[str, Any]:
+
+    return {
+        "step": exc.step,
+        "error_type": type(exc).__name__,
+        "original": str(exc.original),
+    }

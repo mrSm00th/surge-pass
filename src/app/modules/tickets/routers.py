@@ -15,7 +15,7 @@ from src.app.modules.tickets.models import TicketTier
 from src.app.modules.tickets.schemas import CreateTicketTier, TicketTierOut
 from src.app.modules.users.models import User, UserRole
 
-router = APIRouter(prefix="/events", tags=["Tickets"])
+router = APIRouter(prefix="/api/events", tags=["Tickets"])
 
 
 @router.post(

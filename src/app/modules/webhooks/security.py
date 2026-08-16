@@ -21,7 +21,7 @@ def verify_signature(raw_body: bytes, signature: str | None) -> None:
 
     try:
         razorpay_client.utility.verify_webhook_signature(
-            raw_body.decode("utf-8"), signature, settings.RAZORPAY_WEBHOOK_SECRET
+            raw_body.decode("utf-8"), signature, settings.razorpay_webhook_secret
         )
     except SignatureVerificationError as exc:
         logger.warning("Razorpay webhook signature verification failed.")

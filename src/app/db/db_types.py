@@ -18,7 +18,7 @@ class EncryptedString(TypeDecorator):
         if value is None:
             return None
 
-        # encoded in the encrypt_data function itself
+        # encrypt_data returns a decoded str, which safe to store in Text column
         return encrypt_data(value)
 
     def process_result_value(self, value: str | None, dialect: Any) -> str | None:

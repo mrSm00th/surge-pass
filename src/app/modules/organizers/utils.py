@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import uuid
@@ -29,11 +31,33 @@ from src.app.modules.users.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-
 REFERENCE_CODE_LENGTH = 20
 
 
-# a mapping of KYCProviderStatus to the in app KYCStatus
+async def _call_razorpay(
+    step: str, fn: Callable[..., dict[str, Any]], *args: Any
+) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except BadRequestError as exc:
+        raise RazorpayValidationError(step, exc) from exc
+    except (GatewayError, ServerError) as exc:
+        raise RazorpayUpstreamError(step, exc) from exc
+    except requests.exceptions.RequestException as exc:
+        raise RazorpayUpstreamError(step, exc) from exc
+    except Exception as exc:
+        logger.exception("Unclassified error calling Razorpay during '%s'", step)
+        raise RazorpayIntegrationError(step, exc) from exc
+
+
+class OrganizerKYCPreconditionError(RuntimeError):
+    """
+    Raised when this module's own code calls a Razorpay step out of order
+    (e.g. creating a stakeholder before an account exists).
+    An error in our own code that's why not a part of the razorpay hirarchy.
+    """
+
+
 _PROVIDER_TO_BUSINESS_STATUS: dict[KYCProviderStatus, KYCStatus] = {
     KYCProviderStatus.REQUESTED: KYCStatus.IN_REVIEW,
     KYCProviderStatus.UNDER_REVIEW: KYCStatus.IN_REVIEW,
@@ -47,48 +71,18 @@ def map_provider_status_to_kyc_status(provider_status: KYCProviderStatus) -> KYC
     return _PROVIDER_TO_BUSINESS_STATUS[provider_status]
 
 
-# wrapper function to wrap every rz pay call and act as a centralized exception translator
-async def _call_razorpay(
-    step: str,
-    fn: Callable[..., dict[str, Any]],
-    *args: Any,
-) -> dict[str, Any]:
-
-    try:
-        return await asyncio.to_thread(fn, *args)
-
-    except BadRequestError as exc:
-        raise RazorpayValidationError(step, exc) from exc
-
-    except (GatewayError, ServerError) as exc:
-        raise RazorpayUpstreamError(step, exc) from exc
-
-    # catching timeout, DNS or connection reset errors
-    except requests.exceptions.RequestException as exc:
-        raise RazorpayUpstreamError(step, exc) from exc
-
-    except Exception as exc:
-        logger.exception("Unclassified error calling Razorpay during '%s'", step)
-        raise RazorpayIntegrationError(step, exc) from exc
-
-
 async def get_or_create_organizer_profile(
-    db: AsyncSession,
-    user: User,
+    db: AsyncSession, user: User
 ) -> OrganizerProfile:
-
     if user.role == UserRole.ORGANIZER:
         result = await db.execute(
             select(OrganizerProfile).where(OrganizerProfile.user_id == user.id)
         )
-
         organizer_profile = result.scalars().first()
-
         if not organizer_profile:
             raise ValueError(
                 f"Organizer profile not found for user {user.id} with role ORGANIZER"
             )
-
         return organizer_profile
 
     user.role = UserRole.ORGANIZER
@@ -102,21 +96,16 @@ async def get_or_create_organizer_profile(
 
 
 async def get_organizer_profile_by_user_id(
-    db: AsyncSession,
-    user_id: str,
+    db: AsyncSession, user_id: str
 ) -> OrganizerProfile:
-
     result = await db.execute(
         select(OrganizerProfile).where(OrganizerProfile.user_id == user_id)
     )
-
     organizer_profile = result.scalars().first()
-
     if not organizer_profile:
         raise ValueError(
             f"Organizer profile not found for user {user_id} with role ORGANIZER"
         )
-
     return organizer_profile
 
 
@@ -128,7 +117,6 @@ async def get_current_organizer(
         select(OrganizerProfile).where(OrganizerProfile.user_id == current_user.id)
     )
     organizer = result.scalars().first()
-
     if not organizer:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -149,198 +137,153 @@ async def get_verified_organizer(
 
 
 async def _create_razorpay_account(
-    organizer: OrganizerProfile,
-    payload: OrganizerKYCSubmitRequest,
-):
-
-    try:
-        new_razorpay_account = await _call_razorpay(
-            "account.create",
-            {
-                "email": payload.contact_email,
-                "phone": payload.contact_phone,
-                "type": "route",
-                "reference_id": str(organizer.id),
-                "legal_business_name": payload.legal_business_name,
-                "business_type": str,
-                "contact_name": payload.stakeholder.name,
-                "profile": {
-                    "category": "event_management",
-                    "subcategory": "event_management_services",
-                    "addresses": {
-                        "registered": {
-                            "street1": payload.stakeholder.address.street,
-                            "city": payload.stakeholder.address.city,
-                            "state": payload.stakeholder.address.state,
-                            "postal_code": payload.stakeholder.address.postal_code,
-                            "country": payload.stakeholder.address.country,
-                        }
-                    },
+    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
+) -> dict[str, Any]:
+    return await _call_razorpay(
+        "account.create",
+        razorpay_client.account.create,
+        {
+            "email": payload.contact_email,
+            "phone": payload.contact_phone,
+            "type": "route",
+            "reference_id": organizer.razorpay_reference_code,
+            "legal_business_name": payload.legal_business_name,
+            "business_type": payload.business_type.value,
+            "contact_name": payload.stakeholder.name,
+            "profile": {
+                "category": "event_management",
+                "subcategory": "event_management_services",
+                "addresses": {
+                    "registered": {
+                        "street1": payload.stakeholder.address.street,
+                        "city": payload.stakeholder.address.city,
+                        "state": payload.stakeholder.address.state,
+                        "postal_code": payload.stakeholder.address.postal_code,
+                        "country": payload.stakeholder.address.country,
+                    }
                 },
             },
-        )
-
-    except Exception:
-        raise ValueError("something went wrong, check your request and try again")
-
-    return new_razorpay_account
-
-
-# creating stakeholder for the linked account
+        },
+    )
 
 
 async def _create_razorpay_stakeholder(
-    organizer: OrganizerProfile,
-    payload: OrganizerKYCSubmitRequest,
+    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
 ) -> dict[str, Any]:
-
     if organizer.razorpay_account_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay account ID"),
+        raise OrganizerKYCPreconditionError(
+            "_create_razorpay_stakeholder called before an account existed"
         )
 
-    try:
-        new_stakeholder = await _call_razorpay(
-            "stakeholder.create",
-            organizer.razorpay_account_id,
-            {
-                "name": payload.stakeholder.name,
-                "email": payload.stakeholder.email,
-                "percentage_ownership": payload.stakeholder.percentage_ownership,
-                "relationship": {"director": payload.stakeholder.is_director},
-                "phone": {"primary": payload.stakeholder.phone},
-                "addresses": {
-                    "residential": {
-                        "street": payload.stakeholder.address.street,
-                        "city": payload.stakeholder.address.city,
-                        "state": payload.stakeholder.address.state,
-                        "postal_code": payload.stakeholder.address.postal_code,
-                        "country": payload.stakeholder.address.country,
-                    }
-                },
-                "kyc": {"pan": payload.pan_number},
+    return await _call_razorpay(
+        "stakeholder.create",
+        razorpay_client.stakeholder.create,
+        organizer.razorpay_account_id,
+        {
+            "name": payload.stakeholder.name,
+            "email": payload.stakeholder.email,
+            "percentage_ownership": float(payload.stakeholder.percentage_ownership),
+            "relationship": {"director": payload.stakeholder.is_director},
+            "phone": {"primary": payload.stakeholder.phone},
+            "addresses": {
+                "residential": {
+                    "street": payload.stakeholder.address.street,
+                    "city": payload.stakeholder.address.city,
+                    "state": payload.stakeholder.address.state,
+                    "postal_code": payload.stakeholder.address.postal_code,
+                    "country": payload.stakeholder.address.country,
+                }
             },
-        )
-    except Exception as exc:
-        raise RazorpayIntegrationError("stakeholder.create", exc) from exc
-
-    return new_stakeholder
+            "kyc": {"pan": payload.pan_number},
+        },
+    )
 
 
 async def _edit_razorpay_stakeholder(
-    organizer: OrganizerProfile,
-    payload: OrganizerKYCSubmitRequest,
+    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
 ) -> dict[str, Any]:
-
-    if organizer.razorpay_account_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay account ID"),
+    if (
+        organizer.razorpay_account_id is None
+        or organizer.razorpay_stakeholder_id is None
+    ):
+        raise OrganizerKYCPreconditionError(
+            "_edit_razorpay_stakeholder called before account/stakeholder existed"
         )
 
-    if organizer.razorpay_stakeholder_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay stakeholder ID"),
-        )
-
-    try:
-        return await _call_razorpay(
-            "stakeholder.edit",
-            razorpay_client.stakeholder.edit,
-            organizer.razorpay_account_id,
-            organizer.razorpay_stakeholder_id,
-            {
-                "name": payload.stakeholder.name,
-                "percentage_ownership": payload.stakeholder.percentage_ownership,
-                "relationship": {"director": payload.stakeholder.is_director},
-                "phone": {"primary": payload.stakeholder.phone},
-                "addresses": {
-                    "residential": {
-                        "street": payload.stakeholder.address.street,
-                        "city": payload.stakeholder.address.city,
-                        "state": payload.stakeholder.address.state,
-                        "postal_code": payload.stakeholder.address.postal_code,
-                        "country": payload.stakeholder.address.country,
-                    }
-                },
-                "kyc": {"pan": payload.pan_number},
+    return await _call_razorpay(
+        "stakeholder.edit",
+        razorpay_client.stakeholder.edit,
+        organizer.razorpay_account_id,
+        organizer.razorpay_stakeholder_id,
+        {
+            "name": payload.stakeholder.name,
+            "percentage_ownership": float(payload.stakeholder.percentage_ownership),
+            "relationship": {"director": payload.stakeholder.is_director},
+            "phone": {"primary": payload.stakeholder.phone},
+            "addresses": {
+                "residential": {
+                    "street": payload.stakeholder.address.street,
+                    "city": payload.stakeholder.address.city,
+                    "state": payload.stakeholder.address.state,
+                    "postal_code": payload.stakeholder.address.postal_code,
+                    "country": payload.stakeholder.address.country,
+                }
             },
-        )
-    except Exception as exc:
-        raise RazorpayIntegrationError("stakeholder.edit", exc) from exc
+            "kyc": {"pan": payload.pan_number},
+        },
+    )
 
 
 async def _request_razorpay_product_config(
     organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
 ) -> dict[str, Any]:
-
     if organizer.razorpay_account_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay account ID"),
+        raise OrganizerKYCPreconditionError(
+            "_request_razorpay_product_config called before an account existed"
         )
 
-    try:
-        return await _call_razorpay(
-            "product.requestProductConfiguration",
-            razorpay_client.product.requestProductConfiguration,
-            organizer.razorpay_account_id,
-            {
-                "product_name": "route",
-                "tnc_accepted": payload.tnc_accepted,
-                "data": {
-                    "settlements": {
-                        "account_number": payload.bank_account_number,
-                        "ifsc_code": payload.bank_ifsc,
-                        "beneficiary_name": payload.bank_beneficiary_name,
-                    }
-                },
-            },
-        )
-    except Exception as exc:
-        raise RazorpayIntegrationError(
-            "product.requestProductConfiguration", exc
-        ) from exc
-
-
-async def _edit_razorpay_product_config(
-    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
-) -> dict[str, Any]:
-
-    if organizer.razorpay_account_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay account ID"),
-        )
-
-    if organizer.razorpay_stakeholder_id is None:
-        raise RazorpayIntegrationError(
-            "stakeholder.edit",
-            ValueError("Organizer has no Razorpay stakeholder ID"),
-        )
-
-    try:
-        return await _call_razorpay(
-            "product.edit",
-            razorpay_client.product.edit,
-            organizer.razorpay_account_id,
-            organizer.razorpay_product_id,
-            {
+    return await _call_razorpay(
+        "product.requestProductConfiguration",
+        razorpay_client.product.requestProductConfiguration,
+        organizer.razorpay_account_id,
+        {
+            "product_name": "route",
+            "tnc_accepted": payload.tnc_accepted,
+            "data": {
                 "settlements": {
                     "account_number": payload.bank_account_number,
                     "ifsc_code": payload.bank_ifsc,
                     "beneficiary_name": payload.bank_beneficiary_name,
                 }
             },
+        },
+    )
+
+
+async def _edit_razorpay_product_config(
+    organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
+) -> dict[str, Any]:
+    if organizer.razorpay_account_id is None or organizer.razorpay_product_id is None:
+        raise OrganizerKYCPreconditionError(
+            "_edit_razorpay_product_config called before account/product existed"
         )
-    except Exception as exc:
-        raise RazorpayIntegrationError("product.edit", exc) from exc
+
+    return await _call_razorpay(
+        "product.edit",
+        razorpay_client.product.edit,
+        organizer.razorpay_account_id,
+        organizer.razorpay_product_id,
+        {
+            "settlements": {
+                "account_number": payload.bank_account_number,
+                "ifsc_code": payload.bank_ifsc,
+                "beneficiary_name": payload.bank_beneficiary_name,
+            }
+        },
+    )
 
 
-def _guard_kyc_submittable_state(organizer: OrganizerProfile) -> None:
-
+def _guard_submittable_state(organizer: OrganizerProfile) -> None:
     if organizer.kyc_status == KYCStatus.VERIFIED:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "KYC is already verified for this organizer."
@@ -349,13 +292,13 @@ def _guard_kyc_submittable_state(organizer: OrganizerProfile) -> None:
     if organizer.kyc_status == KYCStatus.REJECTED:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "Your organizer's KYC was rejected. Contact support to proceed.",
+            "This organizer's KYC was rejected. Contact support to proceed.",
         )
 
     if organizer.razorpay_account_status == RazorpayAccountStatus.SUSPENDED:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "Your organizer's payout account is suspended. Contact support.",
+            "This organizer's payout account is suspended. Contact support.",
         )
 
     if organizer.kyc_status == KYCStatus.IN_REVIEW:
@@ -365,7 +308,7 @@ def _guard_kyc_submittable_state(organizer: OrganizerProfile) -> None:
         )
 
 
-def _apply_kyc_input_to_profile(
+def _apply_kyc_input(
     organizer: OrganizerProfile, payload: OrganizerKYCSubmitRequest
 ) -> None:
 
@@ -381,7 +324,6 @@ def _apply_kyc_input_to_profile(
 
 
 async def _allocate_reference_code(db: AsyncSession) -> str:
-
     for _ in range(5):
         code = uuid.uuid4().hex[:REFERENCE_CODE_LENGTH]
         existing = await db.execute(
@@ -402,10 +344,10 @@ async def submit_organizer_kyc(
     payload: OrganizerKYCSubmitRequest,
 ) -> OrganizerProfile:
 
-    _guard_kyc_submittable_state(organizer)
+    _guard_submittable_state(organizer)
     is_resubmission = organizer.kyc_status == KYCStatus.ACTION_REQUIRED
 
-    _apply_kyc_input_to_profile(organizer, payload)
+    _apply_kyc_input(organizer, payload)
     await db.flush()
 
     if organizer.razorpay_reference_code is None:
@@ -443,5 +385,4 @@ async def submit_organizer_kyc(
         organizer.kyc_activated_at = datetime.now(UTC)
 
     await db.flush()
-
     return organizer

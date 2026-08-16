@@ -192,6 +192,13 @@ class OrganizerProfile(Base):
         nullable=True,
     )
 
+    kyc_provider_status_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    razorpay_account_status_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     business_name: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
