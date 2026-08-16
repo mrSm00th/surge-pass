@@ -29,7 +29,7 @@ jobs:
       RAZORPAY_KEY_ID: razorpay-key-id
       RAZORPAY_KEY_SECRET: razorpay-key-secret
       RAZORPAY_WEBHOOK_SECRET: razorpay-webhook-secret
-      FERNET_KEY: fernet-key
+      FERNET_KEY: f3XzpDk1PHK-DeJEfDz8Fx_dKRygLs8nh56RJc2zOII=
     services:
       postgres:
         image: postgres:16
