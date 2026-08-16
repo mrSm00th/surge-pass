@@ -44,5 +44,3 @@ dist/
 *.egg-info/
 
 snipits
-
-src/app/modules/organizers/routers.py

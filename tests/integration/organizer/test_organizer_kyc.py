@@ -707,7 +707,7 @@ async def test_webhook_out_of_order_delivery_does_not_regress_status(
     client, webhook_secret
 ):
     email = "webhook-out-of-order@example.com"
-    # token = await make_organizer(client, email)
+    token = await make_organizer(client, email)  # noqa : F841
     await set_organizer_state(
         email,
         razorpay_account_id="acc_WebhookTest5",
