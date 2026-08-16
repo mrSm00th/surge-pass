@@ -26,6 +26,10 @@ jobs:
       MAIL_FROM_NAME: Test
       MAIL_FROM: test@example.com
       OTP_EXPIRE_MINUTES: 10
+      RAZORPAY_KEY_ID: razorpay-key-id
+      RAZORPAY_KEY_SECRET: razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: razorpay-webhook-secret
+      FERNET_KEY: fernet-key
     services:
       postgres:
         image: postgres:16
