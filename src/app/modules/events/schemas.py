@@ -2,13 +2,13 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, configDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.app.modules.events.models import EventStatus
 
 
 class BaseSchema(BaseModel):
-    model_config = configDict(
+    model_config = ConfigDict(
         from_attributes=True,
     )
 

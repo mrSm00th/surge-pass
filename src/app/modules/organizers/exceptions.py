@@ -22,12 +22,13 @@ class RazorpayValidationError(RazorpayIntegrationError):
 
         return str(self.original) or None
 
-    class RazorpayUpstreamError(RazorpayIntegrationError):
-        """
-        This class indicates that their is either a Razorpay side netwrok issue
-        or issue between us and razorpays network.
-        Used for the SDK's GatewayError or ServerError.
-        """
+
+class RazorpayUpstreamError(RazorpayIntegrationError):
+    """
+    This class indicates that their is either a Razorpay side netwrok issue
+    or issue between us and razorpays network.
+    Used for the SDK's GatewayError or ServerError.
+    """
 
     # helper function thats helps us log the exception better
     def describe(exc: RazorpayIntegrationError) -> dict[str, Any]:
