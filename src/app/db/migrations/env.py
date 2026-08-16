@@ -7,8 +7,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.app.core.config import settings
+from src.app.db import model_registry  # noqa: F401
 from src.app.db.database import Base
-from src.app.modules.users.models import User  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

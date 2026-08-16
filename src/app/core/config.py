@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
+    razorpay_key_id: str
+    razorpay_key_secret: str
+
+    razorpay_webhook_secret: str
+
+    fernet_key: str
+
     @property
     def database_url(self) -> str:
         return (
