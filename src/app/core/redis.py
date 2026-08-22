@@ -1,22 +1,20 @@
-import redis.asyncio as redis
+from redis.asyncio import Redis
 
 from src.app.core.config import settings
 
-_redis: redis.Redis | None = None
+_redis_client: Redis | None = None
 
 
-async def init_redis() -> None:
-    global _redis
-    _redis = redis.from_url(settings.redis_url, decode_responses=True)
-    await _redis.ping()
+def get_redis_client() -> Redis:
+
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = Redis.from_url(
+            settings.waiting_room_redis_url, decode_responses=True
+        )
+    return _redis_client
 
 
-async def close_redis() -> None:
-    if _redis is not None:
-        await _redis.close()
+async def get_redis() -> Redis:
 
-
-def get_redis() -> redis.Redis:
-    if _redis is None:
-        raise RuntimeError("Redis not initialized — did the app startup run?")
-    return _redis
+    return get_redis_client()

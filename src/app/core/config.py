@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
+    #  saperating redis db index so that 'flushdb' on celery broker
+    # dont accidently wipe live waiting room data
+
+    waiting_room_redis_url: str = "redis://localhost:6379/2"
+    waiting_room_admission_batch_size: int = 5
+    waiting_room_admission_interval_seconds: int = 10
+    waiting_room_token_ttl_seconds: int = 300
+
     razorpay_key_id: str
     razorpay_key_secret: str
 
