@@ -10,7 +10,7 @@ from src.app.modules.events import routers as events
 from src.app.modules.organizers import routers as organizers
 from src.app.modules.users import routers as users
 from src.app.modules.waiting_rooms import routers as waiting_room
-from src.app.modules.waiting_rooms.service import run_admission_tick
+from src.app.modules.waiting_rooms.services import run_admission_tick
 from src.app.modules.webhooks import routers as webhooks
 
 
