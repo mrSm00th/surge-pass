@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,14 +14,19 @@ from src.app.modules.waiting_rooms import routers as waiting_room
 from src.app.modules.waiting_rooms.services import run_admission_tick
 from src.app.modules.webhooks import routers as webhooks
 
+logger = logging.getLogger(__name__)
+
 
 async def _admission_loop() -> None:
 
     redis = get_redis_client()
     while True:
         await asyncio.sleep(settings.waiting_room_admission_interval_seconds)
-        async with AsyncSessionLocal() as db:
-            await run_admission_tick(redis, db)
+        try:
+            async with AsyncSessionLocal() as db:
+                await run_admission_tick(redis, db)
+        except Exception:
+            logger.exception("waiting room admission tick failed")
 
 
 @asynccontextmanager
