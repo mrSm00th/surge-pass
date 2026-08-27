@@ -25,3 +25,13 @@ class TicketTierOut(BaseSchema):
     total_capacity: int
     price: Decimal
     created_at: datetime
+
+
+class BuyTicketRequest(BaseSchema):
+    quantity: Annotated[int, Field(ge=1, le=10)]
+
+
+class BuyTicketResponse(BaseSchema):
+    ticket_tier_id: uuid.UUID
+    quantity: int
+    total_price: Decimal
