@@ -7,15 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.core.redis import get_redis
 from src.app.db.database import get_db
 from src.app.modules.events.models import Event, EventStatus
-from src.app.modules.waiting_rooms import schemas, service
+from src.app.modules.waiting_rooms.schemas import JoinQueueResponse, QueueStatusResponse
+from src.app.modules.waiting_rooms.services import get_status, join_queue
 
 router = APIRouter(prefix="/waiting-room", tags=["waiting-room"])
 
 
 def _cookie_name(event_id: uuid.UUID) -> str:
-    # storing the cookie name per event because a user could have
-    # multiple waiting room tickets open in different tabs for
-    # different events at the same time
+
     return f"ticket_id:{event_id}"
 
 
@@ -36,7 +35,7 @@ async def _get_published_event(
 
 @router.post(
     "/{event_id}/join",
-    response_model=schemas.JoinQueueResponse,
+    response_model=JoinQueueResponse,
 )
 async def join(
     event_id: uuid.UUID,
@@ -50,15 +49,15 @@ async def join(
     cookie_name = _cookie_name(event_id)
     existing_ticket = request.cookies.get(cookie_name)
 
-    ticket_id = await service.join_queue(redis, event, existing_ticket)
+    ticket_id = await join_queue(redis, event, existing_ticket)
 
     # allowing a max age of 1 hr
     response.set_cookie(cookie_name, ticket_id, httponly=True, max_age=3600)
 
-    return schemas.JoinQueueResponse(ticket_id=ticket_id)
+    return JoinQueueResponse(ticket_id=ticket_id)
 
 
-@router.get("/{event_id}/status", response_model=schemas.QueueStatusResponse)
+@router.get("/{event_id}/status", response_model=QueueStatusResponse)
 async def queue_status(
     event_id: uuid.UUID,
     request: Request,
@@ -74,5 +73,5 @@ async def queue_status(
             detail="No ticket found — join the queue first",
         )
 
-    result = await service.get_status(redis, event, ticket_id)
-    return schemas.QueueStatusResponse(**result)
+    result = await get_status(redis, event, ticket_id)
+    return QueueStatusResponse(**result)
