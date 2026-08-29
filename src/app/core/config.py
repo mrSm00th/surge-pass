@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     fernet_key: str
 
+    waiting_room_token_ttl_seconds: int = 300
+
     @property
     def database_url(self) -> str:
         return (

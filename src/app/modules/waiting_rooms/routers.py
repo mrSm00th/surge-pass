@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.core.config import settings
 from src.app.core.redis import get_redis
 from src.app.db.database import get_db
 from src.app.modules.events.models import Event, EventStatus
@@ -61,6 +62,7 @@ async def join(
 async def queue_status(
     event_id: uuid.UUID,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
@@ -74,4 +76,14 @@ async def queue_status(
         )
 
     result = await get_status(redis, event, ticket_id)
+
+    access_token = result.pop("access_token", None)
+    if access_token:
+        response.set_cookie(
+            "access_token",
+            access_token,
+            httponly=True,
+            max_age=settings.waiting_room_token_ttl_seconds,
+        )
+
     return QueueStatusResponse(**result)
