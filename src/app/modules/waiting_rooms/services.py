@@ -88,7 +88,7 @@ def _issue_access_token(event_id: uuid.UUID, ticket_id: str) -> str:
 
     return jwt.encode(
         payload,
-        settings.access_token_secret_key.get_secret_value(),
+        settings.waiting_room_token_secret_key.get_secret_value(),
         algorithm=settings.access_token_signing_algorithm,
     )
 

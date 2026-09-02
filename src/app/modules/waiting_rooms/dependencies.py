@@ -11,7 +11,7 @@ def _decode_access_token(token: str) -> dict:
     try:
         decoded_data = jwt.decode(
             token,
-            settings.access_token_secret_key.get_secret_value(),
+            settings.waiting_room_token_secret_key.get_secret_value(),
             algorithms=[settings.access_token_signing_algorithm],
         )
     except jwt.PyJWTError:
