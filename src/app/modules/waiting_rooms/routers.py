@@ -1,22 +1,22 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.core.auth import CurrentUser
 from src.app.core.config import settings
 from src.app.core.redis import get_redis
 from src.app.db.database import get_db
 from src.app.modules.events.models import Event, EventStatus
 from src.app.modules.waiting_rooms.schemas import JoinQueueResponse, QueueStatusResponse
-from src.app.modules.waiting_rooms.services import get_status, join_queue
+from src.app.modules.waiting_rooms.services import (
+    get_status,
+    get_ticket_id_for_user,
+    join_queue,
+)
 
 router = APIRouter(prefix="/waiting-room", tags=["waiting-room"])
-
-
-def _cookie_name(event_id: uuid.UUID) -> str:
-
-    return f"ticket_id:{event_id}"
 
 
 async def _get_published_event(
@@ -40,20 +40,13 @@ async def _get_published_event(
 )
 async def join(
     event_id: uuid.UUID,
-    request: Request,
-    response: Response,
+    current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     event = await _get_published_event(event_id, db)
 
-    cookie_name = _cookie_name(event_id)
-    existing_ticket = request.cookies.get(cookie_name)
-
-    ticket_id = await join_queue(redis, event, existing_ticket)
-
-    # allowing a max age of 1 hr
-    response.set_cookie(cookie_name, ticket_id, httponly=True, max_age=3600)
+    ticket_id = await join_queue(redis, event, current_user.id)
 
     return JoinQueueResponse(ticket_id=ticket_id)
 
@@ -61,14 +54,14 @@ async def join(
 @router.get("/{event_id}/status", response_model=QueueStatusResponse)
 async def queue_status(
     event_id: uuid.UUID,
-    request: Request,
+    current_user: CurrentUser,
     response: Response,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     event = await _get_published_event(event_id, db)
 
-    ticket_id = request.cookies.get(_cookie_name(event_id))
+    ticket_id = await get_ticket_id_for_user(redis, event_id, current_user.id)
     if not ticket_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

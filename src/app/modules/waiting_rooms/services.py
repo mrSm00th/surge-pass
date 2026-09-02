@@ -12,7 +12,6 @@ from src.app.modules.events.models import Event, EventStatus
 
 
 def _queue_key(event_id: uuid.UUID) -> str:
-
     return f"waiting_room:queue:{event_id}"
 
 
@@ -20,19 +19,31 @@ def _admitted_key(event_id: uuid.UUID, ticket_id: str) -> str:
     return f"waiting_room:admitted:{event_id}:{ticket_id}"
 
 
-async def join_queue(redis: Redis, event: Event, existing_ticket_id: str | None) -> str:
+def _user_ticket_key(event_id: uuid.UUID, user_id: uuid.UUID) -> str:
+    return f"waiting_room:user:{event_id}:{user_id}"
 
-    if existing_ticket_id:
-        already_in_queue = await redis.zscore(_queue_key(event.id), existing_ticket_id)
-        already_admitted = await redis.get(_admitted_key(event.id, existing_ticket_id))
 
-        if already_in_queue is not None or already_admitted:
-            return existing_ticket_id
+def _admission_lock_key(event_id: uuid.UUID) -> str:
+    return f"waiting_room:admission_lock:{event_id}"
 
+
+async def join_queue(redis: Redis, event: Event, user_id: uuid.UUID) -> str:
+    user_key = _user_ticket_key(event.id, user_id)
     new_ticket_id = str(uuid.uuid4())
-    await redis.zadd(_queue_key(event.id), {new_ticket_id: time.time()})
 
+    claimed = await redis.set(user_key, new_ticket_id, nx=True)
+
+    if not claimed:
+        return await redis.get(user_key)
+
+    await redis.zadd(_queue_key(event.id), {new_ticket_id: time.time()})
     return new_ticket_id
+
+
+async def get_ticket_id_for_user(
+    redis: Redis, event_id: uuid.UUID, user_id: uuid.UUID
+) -> str | None:
+    return await redis.get(_user_ticket_key(event_id, user_id))
 
 
 async def get_status(redis: Redis, event: Event, ticket_id: str) -> dict:
@@ -59,25 +70,16 @@ async def get_status(redis: Redis, event: Event, ticket_id: str) -> dict:
     if position_in_queue is None:
         return {"admitted": False, "sale_started": True}
 
-    total_people_waiting = await redis.zcard(_queue_key(event.id))
-
-    # rough estimate: how many "batches" of people are ahead of us,
-    # times how long each batch takes to get admitted
-    batches_ahead = position_in_queue // settings.waiting_room_admission_batch_size
-    estimated_wait = batches_ahead * settings.waiting_room_admission_interval_seconds
-
     return {
         "admitted": False,
         "sale_started": True,
-        "position": position_in_queue + 1,  # +1 so it's not zero-indexed for the user
-        "total_waiting": total_people_waiting,
-        "estimated_wait_seconds": estimated_wait,
+        "position": position_in_queue + 1,
     }
 
 
 def _issue_access_token(event_id: uuid.UUID, ticket_id: str) -> str:
     payload = {
-        "typ": "waiting_room_access",  # so we know this isnt a login token
+        "typ": "waiting_room_access",
         "event_id": str(event_id),
         "ticket_id": ticket_id,
         "exp": datetime.now(timezone.utc)
@@ -92,7 +94,6 @@ def _issue_access_token(event_id: uuid.UUID, ticket_id: str) -> str:
 
 
 async def run_admission_tick(redis: Redis, db: AsyncSession) -> None:
-
     now = datetime.now(timezone.utc)
 
     query = select(Event).where(
@@ -107,6 +108,13 @@ async def run_admission_tick(redis: Redis, db: AsyncSession) -> None:
 
         people_waiting = await redis.zcard(queue_key)
         if people_waiting == 0:
+            continue
+
+        lock_key = _admission_lock_key(event.id)
+        lock_ttl_seconds = settings.waiting_room_admission_interval_seconds * 3
+        acquired_lock = await redis.set(lock_key, "1", nx=True, ex=lock_ttl_seconds)
+
+        if not acquired_lock:
             continue
 
         people_to_admit = await redis.zpopmin(
@@ -126,8 +134,4 @@ async def run_admission_tick(redis: Redis, db: AsyncSession) -> None:
 async def use_admission_token(
     redis: Redis, event_id: uuid.UUID, ticket_id: str
 ) -> str | None:
-
-    admission_key = _admitted_key(event_id, ticket_id)
-    old_token = await redis.getdel(admission_key)
-
-    return old_token
+    return await redis.getdel(_admitted_key(event_id, ticket_id))

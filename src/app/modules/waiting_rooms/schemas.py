@@ -16,4 +16,3 @@ class QueueStatusResponse(BaseSchema):
     total_waiting: int | None = None
     estimated_wait_seconds: int | None = None
     opens_in_seconds: int | None = None
-    # sending access_token as an httponly cookie
